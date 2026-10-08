@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "distributed-task-platform"
+version = "0.1.0"
+description = "A FastAPI-based distributed task management platform"
+requires-python = ">=3.12"
+dependencies = [
+    "alembic>=1.14,<2.0",
+    "asyncmy>=0.2.10,<1.0",
+    "celery[redis]>=5.4,<6.0",
+    "cryptography",
+    "email-validator>=2.2,<3.0",
+    "fastapi>=0.115,<1.0",
+    "pydantic-settings>=2.7,<3.0",
+    "pymysql>=1.1,<2.0",
+    "pwdlib[argon2]>=0.2,<1.0",
+    "PyJWT>=2.10,<3.0",
+    "python-multipart>=0.0.20,<1.0",
+    "redis>=5.2,<6.0",
+    "sqlalchemy[asyncio]>=2.0.36,<3.0",
+    "uvicorn[standard]>=0.34,<1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "httpx>=0.28,<1.0",
+    "pytest>=8.3,<9.0",
+    "pytest-asyncio>=0.25,<1.0",
+    "ruff>=0.9,<1.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = ["integration: requires live Docker Compose services; some tests can kill the Worker"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+

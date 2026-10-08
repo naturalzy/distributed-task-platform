@@ -1,0 +1,116 @@
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: task_root_password
+      MYSQL_DATABASE: task_platform
+      MYSQL_USER: task_user
+      MYSQL_PASSWORD: task_password
+      TZ: UTC
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-ptask_root_password"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  migrate:
+    build: .
+    command: ["alembic", "upgrade", "head"]
+    environment: &app-environment
+      APP_NAME: Distributed Task Platform
+      ENVIRONMENT: docker
+      DEBUG: "false"
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env before starting Compose}
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      MYSQL_USER: task_user
+      MYSQL_PASSWORD: task_password
+      MYSQL_DATABASE: task_platform
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_CACHE_DB: "0"
+      REDIS_BROKER_DB: "1"
+      REDIS_RESULT_DB: "2"
+      TASK_LEASE_SECONDS: ${TASK_LEASE_SECONDS:-10}
+      TASK_HEARTBEAT_SECONDS: ${TASK_HEARTBEAT_SECONDS:-2}
+      TASK_MAX_ATTEMPTS: ${TASK_MAX_ATTEMPTS:-3}
+      TASK_RECOVERY_SCAN_SECONDS: ${TASK_RECOVERY_SCAN_SECONDS:-1}
+      CSV_UPLOAD_DIR: /app/uploads
+      CSV_MAX_UPLOAD_BYTES: ${CSV_MAX_UPLOAD_BYTES:-10485760}
+      CSV_MAX_ROWS: ${CSV_MAX_ROWS:-100000}
+      CSV_MAX_COLUMNS: ${CSV_MAX_COLUMNS:-200}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build: .
+    environment: *app-environment
+    volumes:
+      - csv_data:/app/uploads
+    ports:
+      - "8000:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  dispatcher:
+    build: .
+    command: ["python", "-m", "app.dispatcher.main"]
+    environment: *app-environment
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    build: .
+    volumes:
+      - csv_data:/app/uploads:ro
+    command:
+      [
+        "celery",
+        "-A",
+        "app.celery_app:celery_app",
+        "worker",
+        "--loglevel=INFO",
+        "--queues=default"
+      ]
+    environment: *app-environment
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
+  redis_data:
+  csv_data:
